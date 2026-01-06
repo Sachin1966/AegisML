@@ -1,0 +1,9 @@
+{
+    "entropy_mean": 2.29612135887146,
+    "entropy_std": 0.0,
+    "grad_norm_mean": 1.0171176514002642,
+    "grad_norm_std": 0.025402057648491135,
+    "dataset": "mnist",
+    "model": "simple_cnn",
+    "timestamp": "2026-01-06T09:11:54.807678"
+}

@@ -7,14 +7,16 @@ interface PageHeaderProps {
   icon: LucideIcon;
   badge?: string;
   badgeVariant?: 'default' | 'success' | 'warning' | 'danger';
+  children?: React.ReactNode;
 }
 
-export function PageHeader({ 
-  title, 
-  description, 
-  icon: Icon, 
+export function PageHeader({
+  title,
+  description,
+  icon: Icon,
   badge,
-  badgeVariant = 'default' 
+  badgeVariant = 'default',
+  children
 }: PageHeaderProps) {
   const badgeColors = {
     default: 'bg-primary/10 text-primary',
@@ -30,18 +32,23 @@ export function PageHeader({
           <Icon className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+            {badge && (
+              <span className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium",
+                badgeColors[badgeVariant]
+              )}>
+                {badge}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
-      {badge && (
-        <span className={cn(
-          "rounded-full px-3 py-1 text-xs font-medium",
-          badgeColors[badgeVariant]
-        )}>
-          {badge}
-        </span>
-      )}
+      <div className="flex items-center gap-2">
+        {children}
+      </div>
     </div>
   );
 }

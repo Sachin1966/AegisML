@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: aegis-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://aegis:aegis_password@db:5432/aegis_db
+    depends_on:
+      - db
+    networks:
+      - aegis-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: aegis-db
+    environment:
+      - POSTGRES_USER=aegis
+      - POSTGRES_PASSWORD=aegis_password
+      - POSTGRES_DB=aegis_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - aegis-network
+  # Optional: MLflow for experiment tracking
+  # mlflow:
+  #   image: ghcr.io/mlflow/mlflow:v2.7.1
+  #   container_name: aegis-mlflow
+  #   ports:
+  #     - "5000:5000"
+  #   command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns --host 0.0.0.0
+  #   networks:
+  #     - aegis-network
+
+volumes:
+  postgres_data:
+
+
+networks:
+  aegis-network:
+    driver: bridge

@@ -1,0 +1,9 @@
+{
+    "entropy_mean": 2.298646743297577,
+    "entropy_std": 1.0033428865671546e-07,
+    "grad_norm_mean": 1.0862713121953624,
+    "grad_norm_std": 0.02095143901226907,
+    "dataset": "mnist",
+    "model": "vit",
+    "timestamp": "2026-01-05T12:04:57.289585"
+}

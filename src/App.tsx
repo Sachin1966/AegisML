@@ -10,6 +10,8 @@ import SelfAwarenessDashboard from "./pages/SelfAwarenessDashboard";
 import EvaluationMetrics from "./pages/EvaluationMetrics";
 import Explainability from "./pages/Explainability";
 import ExperimentHistory from "./pages/ExperimentHistory";
+import ProductionMonitoring from "@/pages/ProductionMonitoring";
+import AIAssistant from "@/pages/AIAssistant";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +29,8 @@ const App = () => (
               <Route path="/" element={<ExperimentControl />} />
               <Route path="/signals" element={<InternalSignalDashboard />} />
               <Route path="/awareness" element={<SelfAwarenessDashboard />} />
+              <Route path="/production" element={<ProductionMonitoring />} />
+              <Route path="/assistant" element={<AIAssistant />} />
               <Route path="/metrics" element={<EvaluationMetrics />} />
               <Route path="/explainability" element={<Explainability />} />
               <Route path="/history" element={<ExperimentHistory />} />

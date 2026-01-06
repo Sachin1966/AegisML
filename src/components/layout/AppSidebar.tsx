@@ -1,52 +1,66 @@
-import { 
-  Beaker, 
-  Activity, 
-  Brain, 
-  BarChart3, 
-  Search, 
+import {
+  Beaker,
+  Activity,
+  Brain,
+  BarChart3,
+  Search,
   History,
   ChevronLeft,
   ChevronRight,
-  Atom
+  Atom,
+  Cloud,
+  Bot
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 const navItems = [
-  { 
-    title: "Experiment Control", 
-    url: "/", 
+  {
+    title: "Experiment Control",
+    url: "/",
     icon: Beaker,
     description: "Configure & run experiments"
   },
-  { 
-    title: "Internal Signals", 
-    url: "/signals", 
+  {
+    title: "Internal Signals",
+    url: "/signals",
     icon: Activity,
     description: "Monitor training dynamics"
   },
-  { 
-    title: "Self-Awareness", 
-    url: "/awareness", 
+  {
+    title: "Self-Awareness",
+    url: "/awareness",
     icon: Brain,
     description: "Failure prediction"
   },
-  { 
-    title: "Metrics & Evaluation", 
-    url: "/metrics", 
+  {
+    title: "AI Assistant",
+    url: "/assistant",
+    icon: Bot,
+    description: "Expert Guidance"
+  },
+  {
+    title: "Production Monitoring",
+    url: "/production",
+    icon: Cloud,
+    description: "Live inference telemetry"
+  },
+  {
+    title: "Metrics & Evaluation",
+    url: "/metrics",
     icon: BarChart3,
     description: "ISS / PSU analysis"
   },
-  { 
-    title: "Explainability", 
-    url: "/explainability", 
+  {
+    title: "Explainability",
+    url: "/explainability",
     icon: Search,
     description: "Signal attribution"
   },
-  { 
-    title: "Experiment History", 
-    url: "/history", 
+  {
+    title: "Experiment History",
+    url: "/history",
     icon: History,
     description: "Past experiments"
   },
@@ -57,7 +71,7 @@ export function AppSidebar() {
   const location = useLocation();
 
   return (
-    <aside 
+    <aside
       className={cn(
         "relative flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300",
         collapsed ? "w-16" : "w-64"
@@ -70,8 +84,7 @@ export function AppSidebar() {
         </div>
         {!collapsed && (
           <div className="flex flex-col">
-            <span className="font-semibold text-sidebar-foreground">SAMI</span>
-            <span className="text-[10px] text-muted-foreground">Self-Aware ML Inspector</span>
+            <span className="font-semibold text-sidebar-foreground">AegisML</span>
           </div>
         )}
       </div>
@@ -86,8 +99,8 @@ export function AppSidebar() {
               to={item.url}
               className={cn(
                 "group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200",
-                isActive 
-                  ? "bg-primary/10 text-primary" 
+                isActive
+                  ? "bg-primary/10 text-primary"
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}
             >

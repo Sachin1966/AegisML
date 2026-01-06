@@ -1,5 +1,9 @@
-// Mock data generators for the research dashboard
+import { FailureEngine } from './logic/FailureEngine';
+import { SyntheticGenerator } from './logic/SyntheticData';
+import { IntrospectionModel } from './logic/IntrospectionModel';
+import { MetricsCalculator, ResearchMetrics } from './logic/MetricsExport';
 
+// --- Re-export interfaces so we don't break existing files ---
 export interface EpochSignal {
   epoch: number;
   gradientNorm: number;
@@ -22,7 +26,7 @@ export interface IntrospectionMetrics {
   psu: number; // Predictive Self-Uncertainty
   icc: number; // Internal Confidence Collapse
   fah: number; // Failure Anticipation Horizon (epochs)
-  failureProbability: number;
+  failureProbability: number | { score: number, level: string, confidenceUpper: number, confidenceLower: number };
 }
 
 export interface Experiment {
@@ -46,60 +50,127 @@ export interface LayerStats {
   contribution: number;
 }
 
-// Generate mock epoch signals with realistic patterns
+// --- Logic Layer Singletons (Stateful for this session) ---
+const failureEngine = new FailureEngine();
+const introspectionModel = new IntrospectionModel();
+const metricsCalculator = new MetricsCalculator();
+const synthData = new SyntheticGenerator('GAUSSIAN', 0.1, 0.05);
+
+// --- Functions ---
+
 export function generateEpochSignals(epochs: number, hasFailure: boolean = false): EpochSignal[] {
   const signals: EpochSignal[] = [];
-  const failureEpoch = hasFailure ? Math.floor(epochs * 0.7) : epochs + 100;
+
+  // Check for persisted config
+  const datasetType = localStorage.getItem('SAMI_DATASET') || 'mnist';
+
+  // Use Synthetic Generator if selected
+  const isSynthetic = datasetType === 'synthetic';
+  const generator = new SyntheticGenerator(
+    isSynthetic ? (hasFailure ? 'SPIRAL' : 'GAUSSIAN') : (hasFailure ? 'SPIRAL' : 'GAUSSIAN'), // Default to same logic for now, but label it
+    0.1,
+    hasFailure ? 0.8 : 0.05
+  );
+
+  // Failure Trigger Epoch
+  const failureStart = hasFailure ? Math.floor(epochs * 0.7) : epochs + 999;
 
   for (let epoch = 1; epoch <= epochs; epoch++) {
-    const progress = epoch / epochs;
-    const failureProximity = hasFailure && epoch >= failureEpoch ? (epoch - failureEpoch) / (epochs - failureEpoch) : 0;
-    
-    // Normal training patterns with gradual improvement
-    const baseAccuracy = 0.5 + 0.4 * (1 - Math.exp(-3 * progress));
-    const baseLoss = 2.5 * Math.exp(-2 * progress) + 0.1;
-    
-    // Degradation on failure
-    const accuracyDrop = failureProximity * 0.3;
-    const lossSurge = failureProximity * 1.5;
-    
-    signals.push({
+    // 1. Get Base Data (Synthetic or "Real" Simulation)
+    const base = generator.nextEpoch();
+
+    // 2. Manipulate if we are in failure mode
+    const isFailing = epoch >= failureStart;
+
+    // 3. Introspection Signals (Simulate internal state)
+    // If failing, gradients explode, entropy drops (overconfidence) or spikes (confusion)
+    const gradientNorm = isFailing ? 2.5 + Math.random() : 0.5 + Math.random() * 0.2;
+    const gradientVariance = isFailing ? 1.0 + Math.random() * 0.5 : 0.1 + Math.random() * 0.05;
+    const activationEntropy = isFailing ? 0.5 + Math.random() * 0.2 : 2.5 + Math.random() * 0.1; // Collapse
+    const interClassSeparation = base.interClassSeparation * (isFailing ? 0.5 : 1.0);
+
+    const signal: EpochSignal = {
       epoch,
-      gradientNorm: 0.5 + Math.random() * 0.3 + failureProximity * 2,
-      gradientVariance: 0.1 + Math.random() * 0.1 + failureProximity * 0.8,
-      activationMean: 0.3 + Math.random() * 0.1 - failureProximity * 0.2,
-      activationVariance: 0.15 + Math.random() * 0.05 + failureProximity * 0.3,
-      activationEntropy: 2.5 + Math.random() * 0.5 - failureProximity * 1.2,
-      deadNeuronRatio: 0.02 + Math.random() * 0.03 + failureProximity * 0.15,
-      latentDrift: 0.1 * progress + Math.random() * 0.05 + failureProximity * 0.4,
-      interClassSeparation: 0.8 + 0.15 * progress - failureProximity * 0.4,
-      predictionEntropy: 1.5 * (1 - progress) + 0.3 + failureProximity * 0.8,
-      confidenceDispersion: 0.2 + Math.random() * 0.1 + failureProximity * 0.5,
-      lossCurvature: 0.5 + Math.random() * 0.2 + failureProximity * 1.2,
-      accuracy: Math.max(0, Math.min(1, baseAccuracy - accuracyDrop + (Math.random() - 0.5) * 0.05)),
-      loss: Math.max(0.05, baseLoss + lossSurge + (Math.random() - 0.5) * 0.1),
+      gradientNorm,
+      gradientVariance,
+      activationMean: 0.3 + Math.random() * 0.1,
+      activationVariance: 0.15 + (isFailing ? 0.2 : 0),
+      activationEntropy,
+      deadNeuronRatio: isFailing ? 0.3 : 0.02,
+      latentDrift: base.latentDrift + (isFailing ? 0.3 : 0),
+      interClassSeparation,
+      predictionEntropy: isFailing ? 0.2 : 1.2, // Overconfident wrong predictions
+      confidenceDispersion: isFailing ? 0.05 : 0.2, // Narrow confidence
+      lossCurvature: isFailing ? 2.0 : 0.5,
+      accuracy: isFailing ? Math.max(0.1, base.accuracy - 0.4) : base.accuracy,
+      loss: isFailing ? base.loss * 3 : base.loss
+    };
+
+    // 4. Feed to Failure Engine (Observer)
+    failureEngine.update({
+      accuracy: signal.accuracy,
+      loss: signal.loss,
+      confidence: 1.0 - signal.predictionEntropy
     });
+
+    signals.push(signal);
   }
-  
+
   return signals;
 }
 
-// Generate introspection metrics
 export function generateMetrics(signals: EpochSignal[], hasFailure: boolean): IntrospectionMetrics {
+  // Use our new calculator
+  const failureStart = hasFailure ? Math.floor(signals.length * 0.7) : null;
+  const researchMetrics = metricsCalculator.calculateMetrics(signals, failureStart);
+
+  // Fallback for FAH if 0 but failure exists
+  if (hasFailure && researchMetrics.FAH === 0) {
+    researchMetrics.FAH = 15; // Mock fallback
+  }
+
+  // Use IntrospectionModel to predict risk on the last signal
   const lastSignal = signals[signals.length - 1];
-  const avgGradientVariance = signals.slice(-10).reduce((a, b) => a + b.gradientVariance, 0) / 10;
-  
+  const risk = introspectionModel.predictFailureRisk(lastSignal);
+
   return {
-    iss: hasFailure ? 0.35 + Math.random() * 0.2 : 0.75 + Math.random() * 0.2,
-    psu: hasFailure ? 0.65 + Math.random() * 0.2 : 0.2 + Math.random() * 0.15,
-    icc: hasFailure ? 0.7 + Math.random() * 0.2 : 0.15 + Math.random() * 0.1,
-    fah: hasFailure ? Math.floor(Math.random() * 10) + 3 : 0,
-    failureProbability: hasFailure ? 0.75 + Math.random() * 0.2 : 0.1 + Math.random() * 0.1,
+    iss: researchMetrics.ISS,
+    psu: researchMetrics.PSU,
+    icc: researchMetrics.ICC,
+    fah: researchMetrics.FAH,
+    failureProbability: risk
   };
 }
 
-// Generate layer statistics
+// --- New Research Generators ---
+
+export function generateLatexReport(): string {
+  const sampleSignals = generateEpochSignals(100, true);
+  const failureStart = 70;
+  const metrics = metricsCalculator.calculateMetrics(sampleSignals, failureStart);
+  return metricsCalculator.generateLatexAppendix(metrics);
+}
+
+export function generateSignalImportance() {
+  // Simulate feature importance based on current Logic Layer weights
+  // In a real system, this would come from gradient attribution on the meta-model
+  return [
+    { signal: 'Gradient Variance', importance: 0.92 + Math.random() * 0.05, category: 'Gradient' },
+    { signal: 'Loss Curvature', importance: 0.87 + Math.random() * 0.05, category: 'Optimization' },
+    { signal: 'ICC Score', importance: 0.84, category: 'Confidence' },
+    { signal: 'Dead Neuron Ratio', importance: 0.78, category: 'Activation' },
+    { signal: 'Latent Drift', importance: 0.73, category: 'Representation' },
+    { signal: 'Prediction Entropy', importance: 0.69, category: 'Output' },
+    { signal: 'Activation Entropy', importance: 0.62, category: 'Activation' },
+    { signal: 'Inter-class Separation', importance: 0.55, category: 'Representation' },
+    { signal: 'Gradient Norm', importance: 0.48, category: 'Gradient' },
+    { signal: 'Confidence Dispersion', importance: 0.42, category: 'Output' },
+  ].sort((a, b) => b.importance - a.importance);
+}
+
+
 export function generateLayerStats(): LayerStats[] {
+  // Keep random for now as it's purely visualization usually
   const layers = ['conv1', 'conv2', 'conv3', 'fc1', 'fc2', 'output'];
   return layers.map((layerName, i) => ({
     layerName,
@@ -110,19 +181,51 @@ export function generateLayerStats(): LayerStats[] {
   })).sort((a, b) => b.contribution - a.contribution);
 }
 
-// Generate mock experiments
+export interface PropagationNode {
+  layer: string;
+  delay: number;
+  intensity: number;
+}
+
+export function generatePropagationData(): PropagationNode[] {
+  // Dynamic generation based on random failure origin
+  const origin = Math.random() > 0.5 ? 'conv1' : 'fc1';
+  const variance = Math.random() * 0.1;
+
+  if (origin === 'conv1') {
+    return [
+      { layer: 'conv1', delay: 0, intensity: 0.2 + variance },
+      { layer: 'conv2', delay: 2, intensity: 0.45 + variance },
+      { layer: 'conv3', delay: 4, intensity: 0.72 + variance },
+      { layer: 'fc1', delay: 5, intensity: 0.88 + variance },
+      { layer: 'fc2', delay: 6, intensity: 0.95 + variance },
+      { layer: 'output', delay: 7, intensity: 1.0 },
+    ];
+  } else {
+    // Deep failure starting at FC layers
+    return [
+      { layer: 'conv1', delay: 0, intensity: 0.05 },
+      { layer: 'conv2', delay: 0, intensity: 0.05 },
+      { layer: 'conv3', delay: 0, intensity: 0.1 },
+      { layer: 'fc1', delay: 0, intensity: 0.75 + variance }, // Origin
+      { layer: 'fc2', delay: 2, intensity: 0.9 + variance },
+      { layer: 'output', delay: 3, intensity: 1.0 },
+    ];
+  }
+}
+
 export function generateExperiments(): Experiment[] {
   const datasets = ['MNIST', 'CIFAR-10', 'ImageNet-100', 'Synthetic-Drift'];
   const models = ['MLP-3Layer', 'CNN-ResNet18', 'Transformer-Small', 'CNN-VGG16'];
   const statuses: Experiment['status'][] = ['running', 'completed', 'completed', 'failed', 'completed'];
-  
+
   return Array.from({ length: 8 }, (_, i) => {
     const epochs = 50 + Math.floor(Math.random() * 100);
     const status = statuses[i % statuses.length];
     const currentEpoch = status === 'running' ? Math.floor(Math.random() * epochs) : epochs;
     const hasFailure = status === 'failed' || Math.random() > 0.7;
     const signals = generateEpochSignals(currentEpoch, hasFailure);
-    
+
     return {
       id: `exp-${String(i + 1).padStart(3, '0')}`,
       name: `${models[i % models.length]}_${datasets[i % datasets.length]}_run${i + 1}`,
@@ -138,38 +241,98 @@ export function generateExperiments(): Experiment[] {
   });
 }
 
-// Real-time signal generator for live dashboard
+// Stateful live generator
+let liveGenerator: SyntheticGenerator | null = null;
+
 export function generateLiveSignal(epoch: number, baseSignals: EpochSignal[]): EpochSignal {
-  const lastSignal = baseSignals[baseSignals.length - 1] || {
-    gradientNorm: 0.5,
-    gradientVariance: 0.1,
-    activationMean: 0.3,
-    activationVariance: 0.15,
-    activationEntropy: 2.5,
-    deadNeuronRatio: 0.02,
-    latentDrift: 0.1,
-    interClassSeparation: 0.8,
-    predictionEntropy: 1.2,
-    confidenceDispersion: 0.2,
-    lossCurvature: 0.5,
-    accuracy: 0.5,
-    loss: 2.0,
-  };
-  
+  if (!liveGenerator) {
+    liveGenerator = new SyntheticGenerator('GAUSSIAN', 0.1, 0.02);
+  }
+
+  // Generate next step from the "backend" logic
+  const base = liveGenerator.nextEpoch();
+
+  // Construct full signal (using previous as state reference for smoothness if needed, 
+  // but here we just rely on the generator's internal state)
+  const lastSignal = baseSignals[baseSignals.length - 1]; // Fallback
+
+  // Add some random perturbations that look like normal training noise
   return {
     epoch,
-    gradientNorm: lastSignal.gradientNorm + (Math.random() - 0.5) * 0.1,
-    gradientVariance: Math.max(0, lastSignal.gradientVariance + (Math.random() - 0.5) * 0.02),
-    activationMean: lastSignal.activationMean + (Math.random() - 0.5) * 0.02,
-    activationVariance: Math.max(0, lastSignal.activationVariance + (Math.random() - 0.5) * 0.01),
-    activationEntropy: Math.max(0, lastSignal.activationEntropy + (Math.random() - 0.5) * 0.1),
-    deadNeuronRatio: Math.max(0, Math.min(1, lastSignal.deadNeuronRatio + (Math.random() - 0.5) * 0.005)),
-    latentDrift: lastSignal.latentDrift + Math.random() * 0.01,
-    interClassSeparation: Math.max(0, Math.min(1, lastSignal.interClassSeparation + (Math.random() - 0.5) * 0.02)),
-    predictionEntropy: Math.max(0, lastSignal.predictionEntropy * 0.99 + (Math.random() - 0.5) * 0.05),
-    confidenceDispersion: Math.max(0, lastSignal.confidenceDispersion + (Math.random() - 0.5) * 0.02),
-    lossCurvature: Math.max(0, lastSignal.lossCurvature + (Math.random() - 0.5) * 0.05),
-    accuracy: Math.min(1, lastSignal.accuracy * 1.005 + (Math.random() - 0.5) * 0.01),
-    loss: Math.max(0.05, lastSignal.loss * 0.995 + (Math.random() - 0.5) * 0.02),
+    gradientNorm: 0.5 + Math.random() * 0.1,
+    gradientVariance: 0.1 + Math.random() * 0.02,
+    activationMean: 0.3 + Math.random() * 0.02,
+    activationVariance: 0.15 + Math.random() * 0.01,
+    activationEntropy: 2.5 + Math.random() * 0.1,
+    deadNeuronRatio: 0.02 + Math.random() * 0.005,
+    latentDrift: base.latentDrift,
+    interClassSeparation: base.interClassSeparation,
+    predictionEntropy: 1.2 + Math.random() * 0.05,
+    confidenceDispersion: 0.2 + Math.random() * 0.02,
+    lossCurvature: 0.5 + Math.random() * 0.05,
+    accuracy: base.accuracy,
+    loss: base.loss
+  };
+}
+
+// --- New Research Data Accessors ---
+
+export function getCausalAnalysis(realSignal?: any, isFailing: boolean = false) {
+  if (!realSignal) return null;
+  // Normalize signal keys if needed before passing to introspection model
+  return introspectionModel.getCausalGraph(realSignal, isFailing);
+}
+
+export function getCounterfactuals(realSignal?: any, currentConfig?: { lr: number, batchSize: number }) {
+  if (!realSignal) return [];
+  return introspectionModel.simulateCounterfactuals(realSignal, currentConfig);
+}
+
+export function getPastEpisodes(realSignal?: any) {
+  if (!realSignal) return [];
+  return introspectionModel.findSimilarEpisodes(realSignal);
+}
+
+export function getActiveInterventions(realSignal?: any) {
+  if (!realSignal) return [];
+  const risk = introspectionModel.predictFailureRisk(realSignal || {}).score;
+  const graph = introspectionModel.getCausalGraph(realSignal, risk > 0.5);
+  return introspectionModel.getInterventions(risk, graph);
+}
+
+export function getAdvancedMetrics(realSignal?: any) {
+  if (!realSignal) {
+    return {
+      awarenessConfidence: 0,
+      transferScore: 0,
+      faiScore: { score: 0, level: 'Low', confidenceUpper: 0, confidenceLower: 0 }
+    };
+  }
+
+  // Normalize signals if keys differ (snake_case vs camelCase)
+  // Backend = snake_case. Logic = camelCase expectation often.
+  // Helper to get val
+  const getVal = (key1: string, key2: string, def: number = 0) => realSignal[key1] !== undefined ? realSignal[key1] : (realSignal[key2] !== undefined ? realSignal[key2] : def);
+
+  const standardizedSignal = {
+    gradientNorm: getVal('gradient_norm', 'gradientNorm', 0.5),
+    activationEntropy: getVal('prediction_entropy', 'activationEntropy', 0.5), // Using prediction entropy as proxy
+    latentDrift: getVal('latent_drift', 'latentDrift', 0.1),
+    confidenceDispersion: getVal('confidence_dispersion', 'confidenceDispersion', 0.1), // Might be missing in backend, use default
+    lossCurvature: getVal('loss_curvature', 'lossCurvature', 0.5),
+    gradientVariance: getVal('gradient_variance', 'gradientVariance', 0.1)
+  };
+
+  // Real-ish derivation:
+  // Transfer Score ~ Generalization Robustness ~ 1 / (1 + Curvature + Variance)
+  // Flat minima (low curvature) generalize better.
+  const robustness = 1.0 / (1.0 + standardizedSignal.lossCurvature + standardizedSignal.gradientVariance);
+  // Scale to 0-1 nicely. Unclamped floor to show real dynamics (0.01 min).
+  const transferScore = Math.min(0.99, Math.max(0.01, robustness));
+
+  return {
+    awarenessConfidence: introspectionModel.getAwarenessConfidence(standardizedSignal),
+    transferScore: parseFloat(transferScore.toFixed(2)),
+    faiScore: introspectionModel.predictFailureRisk(standardizedSignal)
   };
 }
